@@ -73,7 +73,7 @@ class DeviceSelectionPage(ttk.Frame):
         self.start_btn = ttk.Button(btn_frame, text="开始测试", state="disabled", command=self.start_test)
         self.start_btn.grid(row=0, column=1, padx=10)
 
-        self.exit_btn = ttk.Button(btn_frame, text="退出", command=self.controller.root.quit)
+        self.exit_btn = ttk.Button(btn_frame, text="退出", command=self.exit_application)
         self.exit_btn.grid(row=0, column=2, padx=10)
 
     def get_usb_drives(self):
@@ -160,11 +160,7 @@ class DeviceSelectionPage(ttk.Frame):
                                 "total_gb": total_gb
                             }
                             found_drives.append(drive_info)
-                            messagebox.showinfo("检测到可移动设备", 
-                                               f"盘符: {letter}:\n"
-                                               f"路径: {drive_path}\n"
-                                               f"可用空间: {free_gb:.2f}GB\n"
-                                               f"总容量: {total_gb:.2f}GB")
+                            # 移除个人设备信息框，静默收集信息
                     except Exception as e:
                         print(f"检查磁盘 {letter}: 时出错: {e}")
                         continue
@@ -173,11 +169,9 @@ class DeviceSelectionPage(ttk.Frame):
                 messagebox.showerror("错误", "未检测到任何可移动设备（U盘）")
                 return None
             
-            # 如果有多个可移动设备，选择第一个
+            # 如果有多个可移动设备，选择第一个（静默处理）
             selected_drive = found_drives[0]
-            messagebox.showinfo("选择U盘", 
-                               f"已选择U盘: {selected_drive['drive']}\n"
-                               f"可用空间: {selected_drive['free_gb']:.2f}GB")
+            # 静默返回，不显示额外信息框
             
             return selected_drive
             
@@ -215,13 +209,37 @@ class DeviceSelectionPage(ttk.Frame):
             "label": self.selected_device["model"]  # 可用作名称显示
         }
 
-        # 显示确认信息
-        messagebox.showinfo(
-            "U盘路径确认", 
-            f"已检测到U盘路径：{usb_drive_info['drive']}\n"
+        # 显示统一的确认信息并提供选项
+        device_info = (
+            f"U盘设备信息：\n"
             f"型号：{self.selected_device['model']}\n"
-            f"即将开始测试..."
+            f"容量：{self.selected_device['size_gb']:.2f}GB\n"
+            f"盘符：{usb_drive_info['drive']}\n"
+            f"路径：{usb_drive_info['path']}\n"
+            f"可用空间：{usb_drive_info['free_gb']:.2f}GB\n\n"
+            f"是否开始测试？"
         )
+        
+        # 使用askyesno提供“是”和“否”选项
+        result = messagebox.askyesno(
+            "确认开始测试", 
+            device_info
+        )
+        
+        if result:  # 用户点击“是”
+            self.controller.set_selected_usb(usb_info)
+            self.controller.show_page("TestSetupPage")
+        # 如果用户点击“否”，则什么也不做，留在当前页面
 
-        self.controller.set_selected_usb(usb_info)
-        self.controller.show_page("TestSetupPage")
+    def exit_application(self):
+        """安全退出应用程序"""
+        try:
+            # 销毁窗口并退出程序
+            self.controller.root.quit()
+            self.controller.root.destroy()
+        except Exception as e:
+            print(f"退出时出错: {e}")
+        finally:
+            # 强制退出
+            import sys
+            sys.exit(0)

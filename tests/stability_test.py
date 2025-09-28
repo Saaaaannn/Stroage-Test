@@ -41,4 +41,30 @@ class StabilityTest:
                 return False
 
         self.logger.log_message(f"✅ 稳定性测试完成，共执行 {file_count} 次操作")
+        
+        # 清理测试文件
+        self._cleanup_test_files()
+        
         return True
+
+    def _cleanup_test_files(self):
+        """清理稳定性测试生成的所有文件"""
+        try:
+            if self.test_dir.exists():
+                # 清理所有稳定性测试相关文件
+                for test_file in self.test_dir.glob("stability_*.tmp"):
+                    if test_file.is_file():
+                        test_file.unlink()
+                        self.logger.log_message(f"✅ 已清理稳定性测试文件: {test_file.name}")
+                
+                # 清理其他可能的临时文件
+                for temp_file in self.test_dir.glob("*.tmp"):
+                    if temp_file.is_file():
+                        temp_file.unlink()
+                        
+                # 如果目录为空，删除目录
+                if not any(self.test_dir.iterdir()):
+                    self.test_dir.rmdir()
+                    self.logger.log_message(f"✅ 已清理测试目录: {self.test_dir.name}")
+        except Exception as e:
+            self.logger.log_message(f"⚠️ 清理稳定性测试文件时出错: {e}", "WARNING")

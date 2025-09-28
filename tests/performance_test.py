@@ -12,6 +12,110 @@ class PerformanceTest:
         self.test_dir = Path(usb_info["path"]) / TEST_DIR_NAME
         self.test_dir.mkdir(exist_ok=True)
 
+    def _cleanup_test_files(self, local_test_file, usb_test_file, local_temp_dir, total_size_gb):
+        """自动清理测试过程中创建的所有文件和目录"""
+        self.logger.log_message("开始清理测试文件...")
+        cleanup_success = True
+        
+        try:
+            # 1. 清理U盘测试文件
+            if usb_test_file and usb_test_file.exists():
+                try:
+                    usb_test_file.unlink()
+                    self.logger.log_message(f"✅ 已清理U盘测试文件: {usb_test_file.name} ({total_size_gb}GB)")
+                except Exception as e:
+                    self.logger.log_message(f"❌ 清理U盘测试文件失败: {e}", "WARNING")
+                    cleanup_success = False
+            
+            # 2. 彻底清理U盘测试目录及所有内容
+            try:
+                test_dir = usb_test_file.parent if usb_test_file else self.test_dir
+                if test_dir.exists():
+                    self.logger.log_message(f"正在清理U盘测试目录: {test_dir}")
+                    
+                    # 清理目录中的所有文件（包括所有类型的文件）
+                    for item in test_dir.rglob("*"):  # 递归获取所有文件和子目录
+                        if item.is_file():
+                            try:
+                                item.unlink()
+                                self.logger.log_message(f"✅ 已清理文件: {item.name}")
+                            except Exception as e:
+                                self.logger.log_message(f"❌ 清理文件失败 {item.name}: {e}", "WARNING")
+                                cleanup_success = False
+                    
+                    # 清理所有空目录（从最深层开始）
+                    for item in sorted(test_dir.rglob("*"), key=lambda x: len(str(x)), reverse=True):
+                        if item.is_dir() and item != test_dir:
+                            try:
+                                if not any(item.iterdir()):  # 目录为空
+                                    item.rmdir()
+                                    self.logger.log_message(f"✅ 已清理空目录: {item.name}")
+                            except Exception as e:
+                                self.logger.log_message(f"❌ 清理目录失败 {item.name}: {e}", "WARNING")
+                                cleanup_success = False
+                    
+                    # 最后清理主测试目录
+                    try:
+                        if not any(test_dir.iterdir()):  # 目录为空
+                            test_dir.rmdir()
+                            self.logger.log_message(f"✅ 已彻底清理U盘测试目录: {test_dir.name}")
+                        else:
+                            remaining_files = list(test_dir.iterdir())
+                            self.logger.log_message(f"⚠️ U盘测试目录仍有文件，未删除目录: {[f.name for f in remaining_files]}", "WARNING")
+                            cleanup_success = False
+                    except Exception as e:
+                        self.logger.log_message(f"❌ 清理主测试目录失败: {e}", "WARNING")
+                        cleanup_success = False
+                        
+            except Exception as e:
+                self.logger.log_message(f"❌ 清理U盘测试目录失败: {e}", "WARNING")
+                cleanup_success = False
+            
+            # 3. 清理本地E盘测试文件
+            if local_test_file and local_test_file.exists():
+                try:
+                    local_test_file.unlink()
+                    self.logger.log_message(f"✅ 已清理本地测试文件: {local_test_file.name} ({total_size_gb}GB)")
+                except Exception as e:
+                    self.logger.log_message(f"❌ 清理本地测试文件失败: {e}", "WARNING")
+                    cleanup_success = False
+            
+            # 4. 清理本地E盘临时目录中的其他文件
+            if local_temp_dir and local_temp_dir.exists():
+                try:
+                    # 清理目录中的所有文件
+                    for temp_file in local_temp_dir.iterdir():
+                        if temp_file.is_file():
+                            try:
+                                temp_file.unlink()
+                                self.logger.log_message(f"✅ 已清理本地临时文件: {temp_file.name}")
+                            except Exception as e:
+                                self.logger.log_message(f"❌ 清理本地临时文件失败 {temp_file.name}: {e}", "WARNING")
+                                cleanup_success = False
+                    
+                    # 如果目录为空，删除目录
+                    if not any(local_temp_dir.iterdir()):
+                        local_temp_dir.rmdir()
+                        self.logger.log_message("✅ 已清理本地临时目录")
+                    else:
+                        self.logger.log_message("⚠️ 本地临时目录不为空，未删除目录", "WARNING")
+                        
+                except Exception as e:
+                    self.logger.log_message(f"❌ 清理本地临时目录失败: {e}", "WARNING")
+                    cleanup_success = False
+            
+            # 5. 强制垃圾回收
+            import gc
+            gc.collect()
+            
+            if cleanup_success:
+                self.logger.log_message("🎉 所有测试文件清理完成")
+            else:
+                self.logger.log_message("⚠️ 部分测试文件清理失败，请手动检查", "WARNING")
+                
+        except Exception as e:
+            self.logger.log_message(f"❌ 清理过程发生异常: {e}", "ERROR")
+
     def _copy_large_file(self, source_file, target_file):
         """分块复制大文件，解决FAT32文件系统4GB限制"""
         try:
@@ -269,24 +373,40 @@ class PerformanceTest:
         self.logger.log_message(f"================")
 
         # 清理测试文件
-        try:
-            # 清理U盘测试文件
-            if usb_test_file.exists():
-                usb_test_file.unlink()
-                self.logger.log_message(f"已清理{total_size_gb}GB U盘测试文件。")
-            
-            # 清理本地临时文件
-            if local_test_file.exists():
-                local_test_file.unlink()
-                self.logger.log_message(f"已清理{total_size_gb}GB 本地临时文件。")
-            
-            # 清理本地临时目录（如果为空）
-            if local_temp_dir.exists() and not any(local_temp_dir.iterdir()):
-                local_temp_dir.rmdir()
-                self.logger.log_message("已清理本地临时目录。")
-                
-        except Exception as e:
-            self.logger.log_message(f"清理测试文件时出错: {e}", "WARNING")
+        self._cleanup_test_files(local_test_file, usb_test_file, local_temp_dir, total_size_gb)
 
         self.logger.log_message("✅ 性能测试完成")
         return True
+    
+    def __del__(self):
+        """析构函数：确保对象销毁时彻底清理临时文件和目录"""
+        try:
+            # 最后的安全清理：删除可能遗留的临时文件
+            local_temp_dir = Path("E:/temp_usb_test")
+            if local_temp_dir.exists():
+                # 清理所有性能测试相关文件
+                for temp_file in local_temp_dir.glob("perf_test_*.dat"):
+                    if temp_file.exists():
+                        temp_file.unlink()
+                        
+                # 如果目录为空，尝试删除目录
+                if local_temp_dir.exists() and not any(local_temp_dir.iterdir()):
+                    local_temp_dir.rmdir()
+                        
+            # 清理U盘测试目录中的性能测试文件
+            if hasattr(self, 'test_dir') and self.test_dir.exists():
+                # 清理所有性能测试相关文件
+                for temp_file in self.test_dir.glob("perf_test*.dat"):
+                    if temp_file.exists():
+                        temp_file.unlink()
+                        
+                # 尝试清理所有临时文件
+                for temp_file in self.test_dir.glob("*.tmp"):
+                    if temp_file.exists():
+                        temp_file.unlink()
+                        
+                # 如果目录为空，尝试删除目录
+                if self.test_dir.exists() and not any(self.test_dir.iterdir()):
+                    self.test_dir.rmdir()
+        except:
+            pass  # 析构函数中不抛出异常

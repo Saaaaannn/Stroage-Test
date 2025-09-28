@@ -51,6 +51,9 @@ class USBTestApp:
         self.root.title("U盘自动化测试系统")
         self.root.geometry("1000x700")
         self.root.minsize(800, 600)
+        
+        # 设置窗口关闭事件
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # 存储选中的U盘信息
         self.selected_usb = None  # 格式: {"drive": "D:", "path": "D:\\", "total_space_gb": xx, ...}
@@ -112,6 +115,26 @@ class USBTestApp:
     def get_selected_usb(self):
         """供其他页面获取当前选中的U盘"""
         return self.selected_usb
+
+    def on_closing(self):
+        """处理窗口关闭事件"""
+        try:
+            # 检查是否有测试在进行
+            if "TestSetupPage" in self.pages:
+                test_page = self.pages["TestSetupPage"]
+                if hasattr(test_page, 'is_testing') and test_page.is_testing:
+                    if not messagebox.askyesno("确认退出", "测试正在进行中，确定要退出吗？"):
+                        return
+            
+            # 安全退出
+            self.root.quit()
+            self.root.destroy()
+        except Exception as e:
+            print(f"关闭窗口时出错: {e}")
+        finally:
+            # 强制退出
+            import sys
+            sys.exit(0)
 
 
 # ================== 程序启动 ==================
